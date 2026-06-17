@@ -1,6 +1,6 @@
 /*!
  * @file   M5Hat_18650C.cpp
- * @brief  Implementation for M5Stack 18650C Battery Hat (V1.33).
+ * @brief  Implementation for M5Stack HAT 18650C V1.1.
  *
  * Hardware:
  *   - INA226AIDGSR @ 0x41, 10 mΩ shunt — voltage / current / power
@@ -225,7 +225,7 @@ bool M5Hat_18650C::setBatteryVoltageRange(float vEmpty, float vFull)
 {
     _vEmpty = vEmpty;
     _vFull  = vFull;
-    if (vEmpty > vFull){
+    if (vEmpty > vFull) {
         Serial.printf("voltage Empty shouldn't bigger than Full!");
         return false;
     }

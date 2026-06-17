@@ -1,6 +1,6 @@
 /*!
  * @file   M5Hat_18650C.h
- * @brief  Arduino library for M5Stack 18650C Battery Hat (V1.33).
+ * @brief  Arduino library for M5Stack HAT 18650C V1.1.
  *
  * Hardware:
  *   - INA226AIDGSR @ 0x41 — 16‑bit voltage / current / power monitor (10 mΩ shunt)

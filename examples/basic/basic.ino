@@ -1,6 +1,6 @@
 /*!
  * @file   basic.ino
- * @brief  Minimal example for M5Hat-18650C (V1.33).
+ * @brief  Minimal example for M5Stack HAT 18650C V1.1).
  *
  * Prints INA226 voltage / current / power and AW32257 charge state to Serial
  * and the built‑in display.
