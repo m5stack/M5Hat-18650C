@@ -135,7 +135,7 @@ void setup()
     hat.setBatteryVoltageRange(3.0f, 4.2f);
 
     // Optional: configure AW32257 charge parameters
-    hat.setChargeCurrent(900);   // 1.5 A fast‑charge
+    hat.setChargeCurrent(900);    // 1.5 A fast‑charge
     hat.setChargeVoltage(4.20f);  // 4.20 V regulation
 
     Serial.println("----------------------------------------\n");

@@ -170,7 +170,7 @@ private:
 
     // ── INA226 constants ─────────────────────────────────────────────────
     static constexpr uint8_t INA226_ADDR    = 0x41;
-    static constexpr float INA226_SHUNT_OHM = 0.01f;   // 原理图有写 R12电阻 10mΩ/1% 。 --> 0.01Ω
+    static constexpr float INA226_SHUNT_OHM = 0.01f;  // 原理图有写 R12电阻 10mΩ/1% 。 --> 0.01Ω
     static constexpr uint16_t INA226_CAL    = 2048;
     // CAL = 0.00512 / (Current_LSB × Rshunt)
     //   Current_LSB = 8.192 / 32768 = 250 µA
