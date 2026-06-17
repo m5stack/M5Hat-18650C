@@ -13,38 +13,41 @@
  */
 #include "M5Hat_18650C.h"
 
+/* ---- I2C scan (optional debug) ----------------------------------------- */
+
+bool I2C_Scan()
+{
+    Serial.println("======== I2C scan ========");
+    int error     = 0;
+    bool foundINA = false, foundAW = false;
+    uint8_t count = 0;
+    for (uint8_t addr = 1; addr < 127; addr++) {
+#ifdef USE_WIRE
+        Wire.beginTransmission(addr);
+        error = Wire.endTransmission();
+#endif
+        if (error == 0) {
+            Serial.printf("Found: 0x%02X\n", addr);
+            count++;
+            if (addr == 0x41) foundINA = true;
+            if (addr == 0x6A) foundAW = true;
+        }
+    }
+    Serial.printf("%d device(s) found\n", count);
+    if (!foundINA) Serial.println("INA226 (0x41) MISSING!");
+    if (!foundAW) Serial.println("AW32257 (0x6A) MISSING!");
+    Serial.println("==========================\n");
+    return (foundINA && foundAW);
+}
+
 /* ========================================================================== */
-/*  INA226 register map (TI datasheet SBOS547B)                               */
+/*  AW32257 helpers (datasheet V1.5 tables)                                   */
 /* ========================================================================== */
 
-#define INA226_REG_CONFIG       0x00
-#define INA226_REG_SHUNTV       0x01
-#define INA226_REG_BUSV         0x02
-#define INA226_REG_POWER        0x03
-#define INA226_REG_CURRENT      0x04
-#define INA226_REG_CALIBRATION  0x05
-#define INA226_REG_MASK         0x06
-#define INA226_REG_ALERT        0x07
-#define INA226_REG_MANUFACTURER 0xFE
-#define INA226_REG_DIEID        0xFF
-
-// 16‑sample average, 1.1 ms conversion, continuous shunt + bus
-#define INA226_CONFIG_DEFAULT 0x4527
-
-/* ========================================================================== */
-/*  AW32257 current / voltage encoding tables                                 */
-/* ========================================================================== */
-
-// ICHG table: reg 0x04[6:3] → mA (33 mΩ sense, datasheet Table)
+// ICHG table: reg 0x04[6:3] → mA (33 mΩ sense)
 static const uint16_t AW_ICHG_TABLE[16] = {496,  620,  868,  992,  1116, 1240, 1364, 1488,
                                            1612, 1736, 1860, 1984, 2108, 2232, 2356, 2480};
 
-// VOREG table: reg 0x02[7:2] → V (6‑bit, 0x00–0x3F, 3.50–4.50 V, 20 mV step)
-// Calculated: V = 3.50 + code × 0.02
-static float _codeToVoreg(uint8_t code)
-{
-    return 3.50f + (float)code * 0.02f;
-}
 static uint8_t _voregToCode(float v)
 {
     if (v < 3.50f) v = 3.50f;
@@ -71,18 +74,15 @@ bool M5Hat_18650C::begin(TwoWire* wire, int8_t sda, int8_t scl)
 {
     _wire = wire;
 
-    // Initialise the I²C bus on specified pins (M5.begin() already set up the
-    // onboard bus, but the HAT uses a different pair: GPIO 0/GPIO 26).
     if (sda >= 0 && scl >= 0) {
-        _wire->end();            // release previous pin config if any
-        _wire->begin(sda, scl);  // reconfigure on HAT pins
+        _wire->end();
+        _wire->begin(sda, scl, 400000);
     }
 
+    I2C_Scan();
     _ina226Found  = _initIna226();
     _chargerFound = _initAw32257();
-
-    if (_ina226Found) update();
-    return _ina226Found;
+    return (_ina226Found && _chargerFound);
 }
 
 /* ========================================================================== */
@@ -93,40 +93,47 @@ bool M5Hat_18650C::_initIna226()
 {
     if (!_i2cProbe(INA226_ADDR)) return false;
 
-    // Verify manufacturer ID (TI = 0x5449)
-    uint16_t mfrId = _readReg16(INA226_ADDR, INA226_REG_MANUFACTURER);
-
     // Reset and configure
-    _writeReg16(INA226_ADDR, INA226_REG_CONFIG, 0x8000);  // reset
+    _writeReg16(INA226_ADDR, INA226_REG_CONFIG, 0x8000);
     delay(1);
     _writeReg16(INA226_ADDR, INA226_REG_CONFIG, INA226_CONFIG_DEFAULT);
     _writeReg16(INA226_ADDR, INA226_REG_CALIBRATION, INA226_CAL);
-
     return true;
 }
 
 bool M5Hat_18650C::_initAw32257()
 {
     if (!_i2cProbe(AW32257_ADDR)) return false;
-
-    // Verify vendor/part/revision register (0x03 default = 0x53)
-    uint8_t vpr = _readReg8(AW32257_ADDR, AW_REG_VENDOR);
-    (void)vpr;  // non‑critical; proceed regardless
-
     return true;
 }
 
 /* ========================================================================== */
-/*  update()                                                                  */
+/*  Periodic Register Check                                                   */
 /* ========================================================================== */
 
-void M5Hat_18650C::update()
+void M5Hat_18650C::INA_RegisterCheck(float voltage, float current, float power)
 {
-    if (millis() - _lastUpdateMs < 150) return;
-    _lastUpdateMs = millis();
+    static unsigned long lastCheck = 0;
 
-    if (_ina226Found) _readIna226();
-    if (_chargerFound) _readAw32257();
+    if (millis() - lastCheck >= 10000) {
+        Serial.println("\n--- cyclic check register ---");
+
+        uint16_t calReg    = _readReg16(INA226_ADDR, INA226_REG_CALIBRATION);
+        uint16_t shuntReg  = _readReg16(INA226_ADDR, INA226_REG_SHUNTV);
+        uint16_t curReg    = _readReg16(INA226_ADDR, INA226_REG_CURRENT);
+        uint16_t configReg = _readReg16(INA226_ADDR, INA226_REG_CONFIG);
+
+        Serial.printf("Config=0x%04X Shunt=0x%04X Cal=0x%04X Cur=0x%04X\n", configReg, shuntReg, calReg, curReg);
+
+        Serial.printf("API: V=%.4f I=%.4f P=%.4f\n", voltage, current, power);
+
+        if (calReg == 0) {
+            Serial.println("calibration fail, reinit");
+            this->begin(&Wire, I2C_PIN_SDA, I2C_PIN_SCL);
+        }
+
+        lastCheck = millis();
+    }
 }
 
 /* ========================================================================== */
@@ -160,156 +167,126 @@ void M5Hat_18650C::_writeReg16(uint8_t addr, uint8_t reg, uint16_t val)
 
 uint8_t M5Hat_18650C::_readReg8(uint8_t addr, uint8_t reg)
 {
-    return (uint8_t)(_readReg16(addr, reg) & 0xFF);
+    _wire->beginTransmission(addr);
+    _wire->write(reg);
+    if (_wire->endTransmission(false) != 0) return 0xFF;
+    _wire->requestFrom(addr, (uint8_t)1);
+    if (_wire->available() < 1) return 0xFF;
+    return _wire->read();
 }
 
 /* ========================================================================== */
-/*  INA226 readings                                                           */
-/* ========================================================================== */
-
-void M5Hat_18650C::_readIna226()
-{
-    // Bus voltage — unsigned, upper 3 bits are flags, LSB = 1.25 mV
-    uint16_t raw = _readReg16(INA226_ADDR, INA226_REG_BUSV);
-    if (raw == 0xFFFF) return;
-    _busVoltage = raw * 0.00125f;
-
-    // Shunt voltage — signed 16‑bit, LSB = 2.5 µV → mV
-    int16_t sv    = (int16_t)_readReg16(INA226_ADDR, INA226_REG_SHUNTV);
-    _shuntVoltage = sv * 0.0025f;
-
-    // Current — signed 16‑bit, LSB = 250 µA
-    // 250µA = 0.00512/(INA226_CAL * 0.01(10mΩ Rshunt))
-    int16_t cr = (int16_t)_readReg16(INA226_ADDR, INA226_REG_CURRENT);
-    _current   = cr * 0.00025f;
-
-    // Power — unsigned 16‑bit, LSB = 25 × Current_LSB
-    uint16_t pr = _readReg16(INA226_ADDR, INA226_REG_POWER);
-    _power      = pr * 25.0f * 0.00025f;
-}
-
-/* ========================================================================== */
-/*  AW32257 readings  (datasheet V1.5 register map)                           */
-/* ========================================================================== */
-
-void M5Hat_18650C::_readAw32257()
-{
-    // ── Register 0x00: Status ──────────────────────────────────────────
-    uint8_t st = _readReg8(AW32257_ADDR, AW_REG_STATUS);
-    if (st == 0xFF) return;  // I²C error
-
-    // Bits [3:2] → charge state (2‑bit)
-    uint8_t statBits = (st & AW_STAT_MASK) >> AW_STAT_SHIFT;
-    _chargeState     = (charge_state_t)statBits;
-
-    // Bit 2 alone → boost mode flag (same bit as STAT[0] in charge context;
-    // per datasheet, B2=1 means boost mode is active.)
-    _boostMode = (st & 0x04) != 0;  // B2
-
-    // Determine charging flag
-    _charging = (_chargeState == AW_CHG_PROGRESS);
-
-    // ── Register 0x01: Control ─────────────────────────────────────────
-    uint8_t ctrl = _readReg8(AW32257_ADDR, AW_REG_CONTROL);
-    (void)ctrl;  // available for diagnostics (TE, CEN, HZ_MODE, OPA_MODE)
-
-    // Fault detail — derived from status register context
-    // AW32257 datasheet: when STAT = 11 (Fault), lower bits in status or a
-    // companion read give the fault code.  We approximate here; the exact
-    // sub‑code mapping depends on the chip revision.
-    if (_chargeState == AW_CHG_FAULT) {
-        // Try reading boost fault register for cross‑reference
-        uint8_t bf = _readReg8(AW32257_ADDR, AW_REG_BOOST_FAULT);
-        if (bf != 0xFF && (bf & 0x07) != 0) {
-            // In boost mode, boost fault register is authoritative
-            _faultDetail = (fault_detail_t)(bf & 0x07);
-        } else {
-            // In charge mode, use the lower nibble of status as fault hint
-            uint8_t lo   = st & 0x07;
-            _faultDetail = (lo <= 7) ? (fault_detail_t)lo : AW_FAULT_NONE;
-        }
-    } else {
-        _faultDetail = AW_FAULT_NONE;
-    }
-}
-
-/* ========================================================================== */
-/*  Public accessors — INA226                                                 */
+/*  INA226 readings  —  cada getter  lee  directamente I²C (estilo main.cpp)  */
 /* ========================================================================== */
 
 float M5Hat_18650C::getBusVoltage()
 {
-    update();
-    return _busVoltage;
+    uint16_t raw = _readReg16(INA226_ADDR, INA226_REG_BUSV);
+    if (raw == 0xFFFF) return NAN;
+    return raw * 0.00125f;
 }
+
 float M5Hat_18650C::getShuntVoltage()
 {
-    update();
-    return _shuntVoltage;
+    int16_t raw = (int16_t)_readReg16(INA226_ADDR, INA226_REG_SHUNTV);
+    if (raw == (int16_t)0xFFFF) return NAN;
+    return raw * 0.0025f;  // mV
 }
+
 float M5Hat_18650C::getCurrent()
 {
-    update();
-    return _current;
+    int16_t raw = (int16_t)_readReg16(INA226_ADDR, INA226_REG_CURRENT);
+    if (raw == (int16_t)0xFFFF) return NAN;
+    return raw * 0.00025f;  // A
 }
+
 float M5Hat_18650C::getPower()
 {
-    update();
-    return _power;
+    uint16_t raw = _readReg16(INA226_ADDR, INA226_REG_POWER);
+    if (raw == 0xFFFF) return NAN;
+    return raw * 25.0f * 0.00025f;  // W
 }
+
+/* ========================================================================== */
+/*  State‑of‑charge (derived from bus voltage)                                */
+/* ========================================================================== */
 
 float M5Hat_18650C::getBatteryPercentage()
 {
-    update();
-    if (isnan(_busVoltage)) return NAN;
-    float pct = (_busVoltage - _vEmpty) / (_vFull - _vEmpty) * 100.0f;
+    float v = getBusVoltage();
+    if (isnan(v)) return NAN;
+    float pct = (v - _vEmpty) / (_vFull - _vEmpty) * 100.0f;
     if (pct < 0.0f) pct = 0.0f;
     if (pct > 100.0f) pct = 100.0f;
     return pct;
 }
 
-void M5Hat_18650C::setBatteryVoltageRange(float vEmpty, float vFull)
+bool M5Hat_18650C::setBatteryVoltageRange(float vEmpty, float vFull)
 {
     _vEmpty = vEmpty;
     _vFull  = vFull;
+    if (vEmpty > vFull){
+        Serial.printf("voltage Empty shouldn't bigger than Full!");
+        return false;
+    }
+    return true;
 }
 
 /* ========================================================================== */
-/*  Public accessors — AW32257                                                */
+/*  USB present                                                               */
 /* ========================================================================== */
 
-M5Hat_18650C::charge_state_t M5Hat_18650C::getChargeState()
+bool M5Hat_18650C::isUSBPresent()
 {
-    update();
-    return _chargeState;
+    float v = getBusVoltage();
+    return (!isnan(v) && v > 4.5f);
 }
 
-M5Hat_18650C::fault_detail_t M5Hat_18650C::getFaultDetail()
+/* ========================================================================== */
+/*  AW32257 status  —  lee reg 0x00 una vez y parsea todo                     */
+/* ========================================================================== */
+
+aw32257_status_t M5Hat_18650C::getStatus()
 {
-    update();
-    return _faultDetail;
+    aw32257_status_t st = {};
+    uint8_t reg         = _readReg8(AW32257_ADDR, AW_REG_STATUS);
+    if (reg == 0xFF) return st;  // I²C error → all-zero struct
+
+    st.otg       = (reg & AW_OTG_MASK) != 0;
+    st.en_stat   = (reg & AW_EN_STAT_MASK) != 0;
+    st.stat      = (aw_chg_stat_t)((reg & AW_STAT_MASK) >> 4);  // bits [5:4]
+    st.boost     = (reg & AW_BOOST_MASK) != 0;                  // bit  [3]
+    st.chg_fault = (aw_chg_fault_t)(reg & AW_CHG_FAULT_MASK);   // bits [2:0]
+    return st;
+}
+
+aw_chg_stat_t M5Hat_18650C::getChargeState()
+{
+    return getStatus().stat;
+}
+
+aw_chg_fault_t M5Hat_18650C::getFaultDetail()
+{
+    return getStatus().chg_fault;
 }
 
 bool M5Hat_18650C::isCharging()
 {
-    update();
-    // INA226 current sense: positive current → charging
-    if (!isnan(_current) && _current > 0.02f) return true;
-    // AW32257 status: charge in progress
-    return _charging;
+    aw32257_status_t st = getStatus();
+    // INA226 current > 0 → charging; AW32257 stat == PROGRESS → charging
+    if (st.stat == AW_CHG_PROGRESS) return true;
+    float cur = getCurrent();
+    return (!isnan(cur) && cur > 0.02f);
 }
 
 bool M5Hat_18650C::isBoostMode()
 {
-    update();
-    return _boostMode;
+    return getStatus().boost;
 }
 
-bool M5Hat_18650C::isUSBPresent()
-{
-    update();
-    return (_busVoltage > 4.5f);
-}
+/* ========================================================================== */
+/*  Detection                                                                 */
+/* ========================================================================== */
 
 bool M5Hat_18650C::isIna226Found() const
 {
@@ -321,7 +298,7 @@ bool M5Hat_18650C::isChargerFound() const
 }
 
 /* ========================================================================== */
-/*  AW32257 charge parameter configuration                                    */
+/*  AW32257 charge parameter config                                           */
 /* ========================================================================== */
 
 void M5Hat_18650C::setChargerEnabled(bool en)
@@ -330,15 +307,14 @@ void M5Hat_18650C::setChargerEnabled(bool en)
     uint8_t ctrl = _readReg8(AW32257_ADDR, AW_REG_CONTROL);
     if (ctrl == 0xFF) return;
     if (en)
-        ctrl &= ~AW_CEN_MASK;  // CEN=0 → charger enabled
+        ctrl &= ~AW_CEN_MASK;
     else
-        ctrl |= AW_CEN_MASK;  // CEN=1 → charger disabled
+        ctrl |= AW_CEN_MASK;
     _writeReg16(AW32257_ADDR, AW_REG_CONTROL, ctrl);
 }
 
 uint16_t M5Hat_18650C::_mAtoIchg(uint16_t mA)
 {
-    // Find closest ICHG code ≤ target
     for (int i = 15; i >= 0; i--) {
         if (mA >= AW_ICHG_TABLE[i]) return (uint16_t)i;
     }
@@ -351,8 +327,8 @@ void M5Hat_18650C::setChargeCurrent(uint16_t mA)
     uint8_t ichgCode = (uint8_t)_mAtoIchg(mA);
     uint8_t reg4     = _readReg8(AW32257_ADDR, AW_REG_ICHG);
     if (reg4 == 0xFF) return;
-    reg4 &= 0x87;             // keep RESET (B7) and ITERM_CFG (B2-B0)
-    reg4 |= (ichgCode << 3);  // ICHG in B6-B3
+    reg4 &= 0x87;
+    reg4 |= (ichgCode << 3);
     _writeReg16(AW32257_ADDR, AW_REG_ICHG, reg4);
 }
 
@@ -367,7 +343,7 @@ void M5Hat_18650C::setChargeVoltage(float v)
     uint8_t code = _voregToCode(v);
     uint8_t reg2 = _readReg8(AW32257_ADDR, AW_REG_VOREG);
     if (reg2 == 0xFF) return;
-    reg2 &= 0x03;         // keep OTG_PL (B1) and OTG_EN (B0)
-    reg2 |= (code << 2);  // VOREG in B7-B2
+    reg2 &= 0x03;
+    reg2 |= (code << 2);
     _writeReg16(AW32257_ADDR, AW_REG_VOREG, reg2);
 }
