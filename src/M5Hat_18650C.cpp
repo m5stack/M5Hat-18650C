@@ -172,13 +172,14 @@ void M5Hat_18650C::_readIna226()
     // Bus voltage — unsigned, upper 3 bits are flags, LSB = 1.25 mV
     uint16_t raw = _readReg16(INA226_ADDR, INA226_REG_BUSV);
     if (raw == 0xFFFF) return;
-    _busVoltage = ((raw >> 3) & 0x1FFF) * 0.00125f;
+    _busVoltage = raw * 0.00125f;
 
     // Shunt voltage — signed 16‑bit, LSB = 2.5 µV → mV
     int16_t sv    = (int16_t)_readReg16(INA226_ADDR, INA226_REG_SHUNTV);
     _shuntVoltage = sv * 0.0025f;
 
     // Current — signed 16‑bit, LSB = 250 µA
+    // 250µA = 0.00512/(INA226_CAL * 0.01(10mΩ Rshunt))
     int16_t cr = (int16_t)_readReg16(INA226_ADDR, INA226_REG_CURRENT);
     _current   = cr * 0.00025f;
 

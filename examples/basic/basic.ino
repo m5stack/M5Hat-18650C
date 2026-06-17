@@ -131,11 +131,12 @@ void setup()
     Serial.println(hat.isChargerFound() ? "OK" : "MISSING");
 
     // Optional: customise SOC voltage range
-    // hat.setBatteryVoltageRange(3.0f, 4.2f);
+    hat.setChargerEnabled(1);
+    hat.setBatteryVoltageRange(3.0f, 4.2f);
 
     // Optional: configure AW32257 charge parameters
-    // hat.setChargeCurrent(1500);   // 1.5 A fast‑charge
-    // hat.setChargeVoltage(4.20f);  // 4.20 V regulation
+    hat.setChargeCurrent(900);   // 1.5 A fast‑charge
+    hat.setChargeVoltage(4.20f);  // 4.20 V regulation
 
     Serial.println("----------------------------------------\n");
 }
