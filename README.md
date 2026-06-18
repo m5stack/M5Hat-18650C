@@ -10,10 +10,6 @@ M5Hat-18650C is a stackable 18650 Li‑ion battery power module in the M5Stack H
 
 - [https://docs.m5stack.com/zh_CN/hat/hat-18650](https://docs.m5stack.com/zh_CN/hat/hat-18650)
 
-## Required Libraries:
-
-- [https://github.com/m5stack/M5Unified](https://github.com/m5stack/M5Unified)
-
 ## License
 
 - [HAT 18650CV1.1- MIT](LICENSE)

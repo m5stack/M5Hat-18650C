@@ -1,6 +1,6 @@
 {
     "name": "M5Hat-18650C",
-    "version": "0.2.0",
+    "version": "0.0.1",
     "description": "Arduino library for M5Stack 18650C Battery Hat — I2C battery voltage, current & power monitoring via INA226 and AW32257.",
     "keywords": ["m5stack", "battery", "18650", "ina226", "aw32257", "current", "power", "i2c", "m5hat"],
     "repository": {
@@ -17,12 +17,6 @@
     "license": "MIT",
     "homepage": "https://docs.m5stack.com/",
     "frameworks": "arduino",
-    "platforms": ["espressif32", "espressif8266"],
-    "headers": ["M5Hat_18650C.h"],
-    "dependencies": [
-        {
-            "name": "m5unified",
-            "version": "*"
-        }
-    ]
+    "platforms": ["espressif32"],
+    "headers": ["M5Hat_18650C.h"]
 }

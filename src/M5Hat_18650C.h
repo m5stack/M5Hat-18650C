@@ -1,13 +1,12 @@
 /*!
- * @file   M5Hat_18650C.h
- * @brief  Arduino library for M5Stack HAT 18650C V1.1.
+ * @file M5Hat_18650C.h
+ * @brief Arduino library for M5Stack HAT 18650C V1.1.
  *
- * Hardware:
- *   - INA226AIDGSR @ 0x41 — 16‑bit voltage / current / power monitor (10 mΩ shunt)
- *   - AW32257FCR   @ 0x6A — Li‑ion switch‑mode charger with I²C interface
+ * INA226 @ 0x41 (10 mΩ) — voltage / current / power
+ * AW32257 @ 0x6A — Li-ion charger
  *
  * @copyright 2026 M5Stack Technology CO LTD
- * @license   MIT
+ * @license MIT
  */
 #ifndef M5HAT_18650C_H_
 #define M5HAT_18650C_H_
@@ -15,27 +14,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-#define USE_WIRE
-
-#ifdef ARDUINO_M5STACK_STICKC_PLUS
-#define I2C_PIN_SCL 26
-#define I2C_PIN_SDA 0
-#elifdef ARDUINO_M5STACK_STICKS3
-#define I2C_PIN_SCL 0
-#define I2C_PIN_SDA 8
-#else
-#define I2C_PIN_SCL -1
-#define I2C_PIN_SDA -1
-#endif
-
-/* ========================================================================== */
-/*  INA226 config                                                             */
-/* ========================================================================== */
-
-/* ========================================================================== */
-/*  AW32257 charge-state / fault types                                        */
-/* ========================================================================== */
-
+/** AW32257 reg 0x00 bits [5:4] */
 typedef enum : uint8_t {
     AW_CHG_READY    = 0,
     AW_CHG_PROGRESS = 1,
@@ -43,6 +22,7 @@ typedef enum : uint8_t {
     AW_CHG_FAULT    = 3,
 } aw_chg_stat_t;
 
+/** AW32257 reg 0x00 bits [2:0] */
 typedef enum : uint8_t {
     AW_FAULT_NORMAL           = 0,
     AW_FAULT_VBUS_OVP         = 1,
@@ -54,6 +34,7 @@ typedef enum : uint8_t {
     AW_FAULT_NO_BATTERY       = 7,
 } aw_chg_fault_t;
 
+/** AW32257 status register snapshot. */
 typedef struct {
     bool otg;
     bool en_stat;
@@ -62,87 +43,145 @@ typedef struct {
     aw_chg_fault_t chg_fault;
 } aw32257_status_t;
 
-/* ========================================================================== */
-/*  Class M5Hat_18650C                                                        */
-/* ========================================================================== */
-
+/**
+ * @class M5Hat_18650C
+ * @brief Driver for M5Stack HAT 18650C V1.1.
+ *
+ * Provides INA226 power measurements and AW32257 charge management over I2C.
+ */
 class M5Hat_18650C {
 public:
-    M5Hat_18650C();
-    ~M5Hat_18650C();
+    M5Hat_18650C()  = default;
+    ~M5Hat_18650C() = default;
 
+    /**
+     * @brief  Initialize I2C and both on-board chips (INA226 @ 0x41, AW32257 @ 0x6A).
+     * @param  wire I2C bus instance (default Wire).
+     * @param  sda  SDA pin; pass -1 to keep the current bus configuration.
+     * @param  scl  SCL pin; pass -1 to keep the current bus configuration.
+     * @return true when both chips are detected and configured.
+     */
     bool begin(TwoWire* wire = &Wire, int8_t sda = -1, int8_t scl = -1);
 
-    void INA_RegisterCheck(float voltage, float current, float power);
-
+    /**
+     * @brief  Read bus voltage (VBAT) from INA226.
+     * @return Voltage in volts; NAN on I2C error.
+     */
     float getBusVoltage();
 
+    /**
+     * @brief  Read shunt voltage from INA226.
+     * @return Voltage in millivolts; NAN on I2C error.
+     */
     float getShuntVoltage();
 
+    /**
+     * @brief  Read bus current from INA226.
+     * @return Current in amperes (positive = charging); NAN on I2C error.
+     */
     float getCurrent();
 
+    /**
+     * @brief  Read bus power from INA226.
+     * @return Power in watts; NAN on I2C error.
+     */
     float getPower();
 
+    /**
+     * @brief  Estimate state-of-charge from bus voltage.
+     * @return Percentage 0–100; NAN on I2C error. Linear estimate only.
+     */
     float getBatteryPercentage();
 
+    /**
+     * @brief  Set the voltage range used by getBatteryPercentage().
+     * @param  vEmpty Empty-battery voltage (V).
+     * @param  vFull  Full-charge voltage (V).
+     * @return false if vEmpty >= vFull or either value is NAN.
+     */
     bool setBatteryVoltageRange(float vEmpty, float vFull);
 
-    /* ---- AW32257 status (reads register 0x00 once, parses all fields) --- */
+    /**
+     * @brief  Read and parse AW32257 status register (0x00) in one I2C transaction.
+     * @return Status struct; all fields zero on I2C error.
+     */
     aw32257_status_t getStatus();
 
+    /**
+     * @brief  Get AW32257 charge state (register 0x00, bits [5:4]).
+     * @return Charge state enum value.
+     */
     aw_chg_stat_t getChargeState();
 
+    /**
+     * @brief  Get AW32257 fault detail (register 0x00, bits [2:0]).
+     * @return Fault enum value.
+     */
     aw_chg_fault_t getFaultDetail();
 
+    /**
+     * @brief  Check whether the battery is charging.
+     * @return true when charge state is AW_CHG_PROGRESS.
+     */
     bool isCharging();
 
+    /**
+     * @brief  Check whether AW32257 is in boost (OTG) mode.
+     * @return true when control register bit 0 (OPA_MODE) is set.
+     */
     bool isBoostMode();
 
-    /** True when USB VBUS is present (bus voltage > 4.5 V). */
-    bool isUSBPresent();
-
-    /* ---- detection ------------------------------------------------------ */
+    /** @return true if INA226 was found during begin(). */
     bool isIna226Found() const;
+
+    /** @return true if AW32257 was found during begin(). */
     bool isChargerFound() const;
 
-    /* ---- AW32257 charge-parameter config (optional) --------------------- */
+    /**
+     * @brief  Enable or disable the AW32257 charger.
+     * @param  en true to enable charging, false to disable.
+     */
     void setChargerEnabled(bool en);
+
+    /**
+     * @brief  Set fast-charge current on AW32257.
+     * @param  mA Target current in mA (496–2480, snapped to nearest table step).
+     */
     void setChargeCurrent(uint16_t mA);
+
+    /**
+     * @brief  Set charge regulation voltage on AW32257.
+     * @param  v Target voltage in V (clamped to 3.50–4.50 V).
+     */
     void setChargeVoltage(float v);
+
+    /**
+     * @brief  Switch AW32257 between charge and boost (OTG) mode.
+     * @param  boost true for boost mode, false for charge mode.
+     */
+    void setBoostMode(bool boost);
 
 private:
     bool _i2cProbe(uint8_t addr);
-
     uint16_t _readReg16(uint8_t addr, uint8_t reg);
-
     void _writeReg16(uint8_t addr, uint8_t reg, uint16_t val);
-
     uint8_t _readReg8(uint8_t addr, uint8_t reg);
-
-    /* ---- chip init ------------------------------------------------------ */
+    void _writeReg8(uint8_t addr, uint8_t reg, uint8_t val);
     bool _initIna226();
-
     bool _initAw32257();
-
-    /* ---- helpers -------------------------------------------------------- */
     uint16_t _mAtoIchg(uint16_t mA);
-    uint8_t _vToVoreg(float v);
+    uint8_t _voregToCode(float v);
 
-    /* ---- state ---------------------------------------------------------- */
-    TwoWire* _wire = nullptr;
-
+    TwoWire* _wire     = nullptr;
     bool _ina226Found  = false;
     bool _chargerFound = false;
+    float _vEmpty      = 3.0f;
+    float _vFull       = 4.2f;
 
-    float _vEmpty = 3.0f;
-    float _vFull  = 4.2f;
-
-    // ── INA226 constants ─────────────────────────────────────────────────
-    static constexpr uint8_t INA226_ADDR    = 0x41;
-    static constexpr float INA226_SHUNT_OHM = 0.01f;
-    static constexpr uint16_t INA226_CAL    = 2048;
-    // 16‑sample average, 1.1 ms conversion, continuous shunt + bus
-    static constexpr uint16_t INA226_CONFIG_DEFAULT = 0x4527;
+    static constexpr uint8_t INA226_ADDR      = 0x41;
+    static constexpr float INA226_SHUNT_OHM   = 0.01f;
+    static constexpr float INA226_MAX_CURRENT = 2.0f;
+    static constexpr float INA226_CURRENT_LSB = INA226_MAX_CURRENT / 32768.0f;
 
     enum : uint8_t {
         INA226_REG_CONFIG       = 0x00,
@@ -157,7 +196,6 @@ private:
         INA226_REG_DIEID        = 0xFF,
     };
 
-    // ── AW32257 constants ────────────────────────────────────────────────
     static constexpr uint8_t AW32257_ADDR = 0x6A;
 
     enum : uint8_t {
@@ -174,18 +212,17 @@ private:
         AW_REG_BOOST_CFG   = 0x0A,
     };
 
-    // Reg 0x00 bit masks
     static constexpr uint8_t AW_OTG_MASK       = 0x80;
     static constexpr uint8_t AW_EN_STAT_MASK   = 0x40;
-    static constexpr uint8_t AW_STAT_MASK      = 0x30;  // bits [5:4]
-    static constexpr uint8_t AW_BOOST_MASK     = 0x08;  // bit  [3]
-    static constexpr uint8_t AW_CHG_FAULT_MASK = 0x07;  // bits [2:0]
-
-    // Reg 0x01 bit masks
-    static constexpr uint8_t AW_TE_MASK       = 0x08;
-    static constexpr uint8_t AW_CEN_MASK      = 0x04;
-    static constexpr uint8_t AW_HZ_MODE_MASK  = 0x02;
-    static constexpr uint8_t AW_OPA_MODE_MASK = 0x01;
+    static constexpr uint8_t AW_STAT_MASK      = 0x30;
+    static constexpr uint8_t AW_BOOST_MASK     = 0x08;
+    static constexpr uint8_t AW_CHG_FAULT_MASK = 0x07;
+    static constexpr uint8_t AW_TE_MASK        = 0x08;
+    static constexpr uint8_t AW_CEN_MASK       = 0x04;
+    static constexpr uint8_t AW_HZ_MODE_MASK   = 0x02;
+    static constexpr uint8_t AW_OPA_MODE_MASK  = 0x01;
+    static constexpr uint8_t AW_ITERM_DEFAULT  = 0x01;
+    static constexpr uint8_t AW_VOREG_4V20     = 0x8E;
 };
 
-#endif  // M5HAT_18650C_H_
+#endif

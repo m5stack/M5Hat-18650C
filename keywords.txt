@@ -10,13 +10,13 @@ getFaultDetail	KEYWORD2
 getStatus	KEYWORD2
 isCharging	KEYWORD2
 isBoostMode	KEYWORD2
-isUSBPresent	KEYWORD2
 isIna226Found	KEYWORD2
 isChargerFound	KEYWORD2
 setBatteryVoltageRange	KEYWORD2
 setChargerEnabled	KEYWORD2
 setChargeCurrent	KEYWORD2
 setChargeVoltage	KEYWORD2
+setBoostMode	KEYWORD2
 aw_chg_stat_t	KEYWORD1
 aw_chg_fault_t	KEYWORD1
 aw32257_status_t	KEYWORD1
