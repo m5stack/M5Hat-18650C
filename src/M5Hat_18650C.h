@@ -64,10 +64,10 @@ public:
     bool begin(TwoWire* wire = &Wire, int8_t sda = -1, int8_t scl = -1);
 
     /**
-     * @brief  Read bus voltage (VBAT) from INA226.
+     * @brief  Read battery voltage (VBAT) from INA226.
      * @return Voltage in volts; NAN on I2C error.
      */
-    float getBusVoltage();
+    float getBatteryVoltage();
 
     /**
      * @brief  Read shunt voltage from INA226.
@@ -76,19 +76,19 @@ public:
     float getShuntVoltage();
 
     /**
-     * @brief  Read bus current from INA226.
+     * @brief  Read battery current from INA226.
      * @return Current in amperes (positive = charging); NAN on I2C error.
      */
-    float getCurrent();
+    float getBatteryCurrent();
 
     /**
-     * @brief  Read bus power from INA226.
+     * @brief  Read battery power from INA226.
      * @return Power in watts; NAN on I2C error.
      */
-    float getPower();
+    float getBatteryPower();
 
     /**
-     * @brief  Estimate state-of-charge from bus voltage.
+     * @brief  Estimate state-of-charge from battery voltage.
      * @return Percentage 0–100; NAN on I2C error. Linear estimate only.
      */
     float getBatteryPercentage();
@@ -105,7 +105,7 @@ public:
      * @brief  Read and parse AW32257 status register (0x00) in one I2C transaction.
      * @return Status struct; all fields zero on I2C error.
      */
-    aw32257_status_t getStatus();
+    aw32257_status_t getChargerStatus();
 
     /**
      * @brief  Get AW32257 charge state (register 0x00, bits [5:4]).
@@ -117,7 +117,7 @@ public:
      * @brief  Get AW32257 fault detail (register 0x00, bits [2:0]).
      * @return Fault enum value.
      */
-    aw_chg_fault_t getFaultDetail();
+    aw_chg_fault_t getChargeFault();
 
     /**
      * @brief  Check whether the battery is charging.
@@ -131,8 +131,8 @@ public:
      */
     bool isBoostMode();
 
-    /** @return true if INA226 was found during begin(). */
-    bool isIna226Found() const;
+    /** @return true if INA226 power monitor was found during begin(). */
+    bool isPowerMonitorFound() const;
 
     /** @return true if AW32257 was found during begin(). */
     bool isChargerFound() const;
@@ -163,9 +163,9 @@ public:
 
 private:
     bool _i2cProbe(uint8_t addr);
-    uint16_t _readReg16(uint8_t addr, uint8_t reg);
+    bool _readReg16(uint8_t addr, uint8_t reg, uint16_t& val);
     void _writeReg16(uint8_t addr, uint8_t reg, uint16_t val);
-    uint8_t _readReg8(uint8_t addr, uint8_t reg);
+    bool _readReg8(uint8_t addr, uint8_t reg, uint8_t& val);
     void _writeReg8(uint8_t addr, uint8_t reg, uint8_t val);
     bool _initIna226();
     bool _initAw32257();

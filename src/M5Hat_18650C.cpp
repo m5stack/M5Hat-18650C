@@ -38,8 +38,8 @@ bool M5Hat_18650C::_initAw32257()
     _writeReg8(AW32257_ADDR, AW_REG_VOREG, AW_VOREG_4V20);
     _writeReg8(AW32257_ADDR, AW_REG_ICHG, (0x02 << 3) | AW_ITERM_DEFAULT);
 
-    uint8_t ctrl = _readReg8(AW32257_ADDR, AW_REG_CONTROL);
-    if (ctrl == 0xFF) return false;
+    uint8_t ctrl;
+    if (!_readReg8(AW32257_ADDR, AW_REG_CONTROL, ctrl)) return false;
     ctrl &= ~AW_OPA_MODE_MASK;
     _writeReg8(AW32257_ADDR, AW_REG_CONTROL, ctrl);
     return true;
@@ -51,14 +51,15 @@ bool M5Hat_18650C::_i2cProbe(uint8_t addr)
     return (_wire->endTransmission(true) == 0);
 }
 
-uint16_t M5Hat_18650C::_readReg16(uint8_t addr, uint8_t reg)
+bool M5Hat_18650C::_readReg16(uint8_t addr, uint8_t reg, uint16_t& val)
 {
     _wire->beginTransmission(addr);
     _wire->write(reg);
-    if (_wire->endTransmission(false) != 0) return 0xFFFF;
+    if (_wire->endTransmission(false) != 0) return false;
     _wire->requestFrom(addr, (uint8_t)2);
-    if (_wire->available() < 2) return 0xFFFF;
-    return ((uint16_t)_wire->read() << 8) | _wire->read();
+    if (_wire->available() < 2) return false;
+    val = ((uint16_t)_wire->read() << 8) | _wire->read();
+    return true;
 }
 
 void M5Hat_18650C::_writeReg16(uint8_t addr, uint8_t reg, uint16_t val)
@@ -70,14 +71,15 @@ void M5Hat_18650C::_writeReg16(uint8_t addr, uint8_t reg, uint16_t val)
     _wire->endTransmission(true);
 }
 
-uint8_t M5Hat_18650C::_readReg8(uint8_t addr, uint8_t reg)
+bool M5Hat_18650C::_readReg8(uint8_t addr, uint8_t reg, uint8_t& val)
 {
     _wire->beginTransmission(addr);
     _wire->write(reg);
-    if (_wire->endTransmission(false) != 0) return 0xFF;
+    if (_wire->endTransmission(false) != 0) return false;
     _wire->requestFrom(addr, (uint8_t)1);
-    if (_wire->available() < 1) return 0xFF;
-    return _wire->read();
+    if (_wire->available() < 1) return false;
+    val = _wire->read();
+    return true;
 }
 
 void M5Hat_18650C::_writeReg8(uint8_t addr, uint8_t reg, uint8_t val)
@@ -88,37 +90,37 @@ void M5Hat_18650C::_writeReg8(uint8_t addr, uint8_t reg, uint8_t val)
     _wire->endTransmission(true);
 }
 
-float M5Hat_18650C::getBusVoltage()
+float M5Hat_18650C::getBatteryVoltage()
 {
-    uint16_t raw = _readReg16(INA226_ADDR, INA226_REG_BUSV);
-    if (raw == 0xFFFF) return NAN;
+    uint16_t raw;
+    if (!_readReg16(INA226_ADDR, INA226_REG_BUSV, raw)) return NAN;
     return raw * 1.25e-3f;
 }
 
 float M5Hat_18650C::getShuntVoltage()
 {
-    int16_t raw = (int16_t)_readReg16(INA226_ADDR, INA226_REG_SHUNTV);
-    if (raw == (int16_t)0xFFFF) return NAN;
-    return raw * 2.5e-3f;
+    uint16_t uraw;
+    if (!_readReg16(INA226_ADDR, INA226_REG_SHUNTV, uraw)) return NAN;
+    return (int16_t)uraw * 2.5e-3f;
 }
 
-float M5Hat_18650C::getCurrent()
+float M5Hat_18650C::getBatteryCurrent()
 {
-    int16_t raw = (int16_t)_readReg16(INA226_ADDR, INA226_REG_CURRENT);
-    if (raw == (int16_t)0xFFFF) return NAN;
-    return raw * INA226_CURRENT_LSB;
+    uint16_t uraw;
+    if (!_readReg16(INA226_ADDR, INA226_REG_CURRENT, uraw)) return NAN;
+    return (int16_t)uraw * INA226_CURRENT_LSB;
 }
 
-float M5Hat_18650C::getPower()
+float M5Hat_18650C::getBatteryPower()
 {
-    uint16_t raw = _readReg16(INA226_ADDR, INA226_REG_POWER);
-    if (raw == 0xFFFF) return NAN;
+    uint16_t raw;
+    if (!_readReg16(INA226_ADDR, INA226_REG_POWER, raw)) return NAN;
     return raw * (25.0f * INA226_CURRENT_LSB);
 }
 
 float M5Hat_18650C::getBatteryPercentage()
 {
-    float v = getBusVoltage();
+    float v = getBatteryVoltage();
     if (isnan(v)) return NAN;
     float pct = (v - _vEmpty) / (_vFull - _vEmpty) * 100.0f;
     if (pct < 0.0f) pct = 0.0f;
@@ -134,11 +136,11 @@ bool M5Hat_18650C::setBatteryVoltageRange(float vEmpty, float vFull)
     return true;
 }
 
-aw32257_status_t M5Hat_18650C::getStatus()
+aw32257_status_t M5Hat_18650C::getChargerStatus()
 {
     aw32257_status_t st = {};
-    uint8_t reg         = _readReg8(AW32257_ADDR, AW_REG_STATUS);
-    if (reg == 0xFF) return st;
+    uint8_t reg;
+    if (!_readReg8(AW32257_ADDR, AW_REG_STATUS, reg)) return st;
 
     st.otg       = (reg & AW_OTG_MASK) != 0;
     st.en_stat   = (reg & AW_EN_STAT_MASK) != 0;
@@ -150,12 +152,12 @@ aw32257_status_t M5Hat_18650C::getStatus()
 
 aw_chg_stat_t M5Hat_18650C::getChargeState()
 {
-    return getStatus().stat;
+    return getChargerStatus().stat;
 }
 
-aw_chg_fault_t M5Hat_18650C::getFaultDetail()
+aw_chg_fault_t M5Hat_18650C::getChargeFault()
 {
-    return getStatus().chg_fault;
+    return getChargerStatus().chg_fault;
 }
 
 bool M5Hat_18650C::isCharging()
@@ -165,12 +167,12 @@ bool M5Hat_18650C::isCharging()
 
 bool M5Hat_18650C::isBoostMode()
 {
-    uint8_t ctrl = _readReg8(AW32257_ADDR, AW_REG_CONTROL);
-    if (ctrl == 0xFF) return false;
+    uint8_t ctrl;
+    if (!_readReg8(AW32257_ADDR, AW_REG_CONTROL, ctrl)) return false;
     return (ctrl & AW_OPA_MODE_MASK) != 0;
 }
 
-bool M5Hat_18650C::isIna226Found() const
+bool M5Hat_18650C::isPowerMonitorFound() const
 {
     return _ina226Found;
 }
@@ -183,8 +185,8 @@ bool M5Hat_18650C::isChargerFound() const
 void M5Hat_18650C::setChargerEnabled(bool en)
 {
     if (!_chargerFound) return;
-    uint8_t ctrl = _readReg8(AW32257_ADDR, AW_REG_CONTROL);
-    if (ctrl == 0xFF) return;
+    uint8_t ctrl;
+    if (!_readReg8(AW32257_ADDR, AW_REG_CONTROL, ctrl)) return;
     if (en)
         ctrl &= ~AW_CEN_MASK;
     else
@@ -222,8 +224,8 @@ void M5Hat_18650C::setChargeVoltage(float v)
         return;
     }
     uint8_t code = _voregToCode(v);
-    uint8_t reg2 = _readReg8(AW32257_ADDR, AW_REG_VOREG);
-    if (reg2 == 0xFF) return;
+    uint8_t reg2;
+    if (!_readReg8(AW32257_ADDR, AW_REG_VOREG, reg2)) return;
     reg2 &= 0x03;
     reg2 |= (code << 2);
     _writeReg8(AW32257_ADDR, AW_REG_VOREG, reg2);
@@ -232,8 +234,8 @@ void M5Hat_18650C::setChargeVoltage(float v)
 void M5Hat_18650C::setBoostMode(bool boost)
 {
     if (!_chargerFound) return;
-    uint8_t ctrl = _readReg8(AW32257_ADDR, AW_REG_CONTROL);
-    if (ctrl == 0xFF) return;
+    uint8_t ctrl;
+    if (!_readReg8(AW32257_ADDR, AW_REG_CONTROL, ctrl)) return;
     if (boost)
         ctrl |= AW_OPA_MODE_MASK;
     else

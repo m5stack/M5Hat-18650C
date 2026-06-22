@@ -133,11 +133,11 @@ void loop()
 {
     M5.update();
 
-    float vbat          = hat.getBusVoltage();
-    float cur           = hat.getCurrent();
-    float pwr           = hat.getPower();
+    float vbat          = hat.getBatteryVoltage();
+    float cur           = hat.getBatteryCurrent();
+    float pwr           = hat.getBatteryPower();
     float soc           = hat.getBatteryPercentage();
-    aw32257_status_t st = hat.getStatus();
+    aw32257_status_t st = hat.getChargerStatus();
 
     onButtons(vbat, st.stat);
     draw(st.stat, vbat, cur, pwr, soc);
