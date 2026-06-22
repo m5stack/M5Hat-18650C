@@ -151,7 +151,7 @@ public:
 
     /**
      * @brief  Set charge regulation voltage on AW32257.
-     * @param  v Target voltage in V (clamped to 3.50–4.50 V).
+     * @param  v Target voltage in V (clamped to 3.50–4.50 V); ignored if NAN.
      */
     void setChargeVoltage(float v);
 

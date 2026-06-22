@@ -219,6 +219,7 @@ uint8_t M5Hat_18650C::_voregToCode(float v)
 void M5Hat_18650C::setChargeVoltage(float v)
 {
     if (!_chargerFound) return;
+    if (isnan(v)) return;
     if (v >= 4.19f && v <= 4.21f) {
         _writeReg8(AW32257_ADDR, AW_REG_VOREG, AW_VOREG_4V20);
         return;
