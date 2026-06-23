@@ -57,5 +57,7 @@ release/
 out/
 bin/
 obj/
+doc/
+reference/
 
 *.code-workspace
